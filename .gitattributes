@@ -1,0 +1,31 @@
+# Normalización de fin de línea
+* text=auto
+
+# Scripts de shell
+*.sh      text eol=lf
+mvnw      text eol=lf
+
+# Scripts de Windows
+*.cmd     text eol=crlf
+*.bat     text eol=crlf
+
+# Archivos de configuración y build
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.xml     text eol=lf
+*.properties text eol=lf
+Dockerfile text eol=lf
+
+# Archivos Java
+*.java    text eol=lf
+
+# Archivos Markdown y documentación
+*.md      text eol=lf
+
+# Evita normalizar binarios
+*.jar     binary
+*.class   binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary

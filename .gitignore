@@ -1,0 +1,53 @@
+# Archivos temporales del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de log
+*.log
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.sw?
+
+# NetBeans
+/nbbuild/
+/nbdist/
+/nbproject/private/
+/build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+/.nb-gradle/
+
+# Eclipse / Spring Tool Suite
+.classpath
+.project
+.factorypath
+.settings/
+.apt_generated/
+.sts4-cache/
+.springBeans/
+
+# Archivos de salida de compilación
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Maven Wrapper
+.mvn/wrapper/maven-wrapper.jar
+
+# Archivos generados por Maven
+**/generated-sources/
+**/generated-test-sources/
+**/maven-status/
+**/maven-archiver/
+**/*.original
+
+# JARs
+*.jar
+
+# Otros
+HELP.md
