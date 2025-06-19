@@ -12,11 +12,11 @@
     <relativePath>../../pom.xml</relativePath>
   </parent>
 
-  <groupId>com.vengalsas.core.auth</groupId>
-  <artifactId>auth-service</artifactId>
+  <groupId>com.vengalsas.core.conciliation</groupId>
+  <artifactId>conciliation-service</artifactId>
   <version>0.0.1-SNAPSHOT</version>
-  <name>auth-service</name>
-  <description>Microservicio de autenticación y autorización de Vengal SAS Core</description>
+  <name>conciliation-service</name>
+  <description>Microservicio de conciliación bancario de Vengal SAS Core</description>
 
   <properties>
     <java.version>21</java.version>
@@ -85,7 +85,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <configuration>
-          <mainClass>com.vengalsas.core.auth.AuthServiceApplication</mainClass>
+          <mainClass>com.vengalsas.core.conciliation.ConciliationServiceApplication</mainClass>
         </configuration>
         <executions>
           <execution>

@@ -28,14 +28,51 @@ delete_pod() {
   fi
 }
 
-# Lista de pods a eliminar (orden importa si hay dependencias de red/volúmenes)
+# Función para eliminar imágenes
+delete_image() {
+  local IMAGE_NAME="$1"
+  if podman images | grep -q "$IMAGE_NAME"; then
+    podman rmi -f "$IMAGE_NAME" > /dev/null
+    echo -e "${GREEN}🗑 Imagen '${IMAGE_NAME}' eliminada.${NC}"
+  else
+    echo -e "${YELLOW}⚠️  Imagen '${IMAGE_NAME}' no encontrada.${NC}"
+  fi
+}
+
+# Función para eliminar contenedores huérfanos (infraestructura temporal)
+delete_orphaned_containers() {
+  local CONTAINERS
+  CONTAINERS=$(podman ps -a --format '{{.Names}}' | grep 'infra$' || true)
+  for container in $CONTAINERS; do
+    podman rm -f "$container" > /dev/null
+    echo -e "${GREEN}🧽 Contenedor huérfano '${container}' eliminado.${NC}"
+  done
+}
+
+# Lista de pods a eliminar
 PODS=(
   "auth-app-pod"
   "auth-pod"
+  "conciliation-app-pod"
+  "conciliation-postgres-pod"
+)
+
+
+
+# Lista de imágenes a eliminar
+IMAGES=(
+  "auth-service-app:latest"
+  "conciliation-service-app:latest"
 )
 
 for POD in "${PODS[@]}"; do
   delete_pod "$POD"
 done
 
-echo -e "${CYAN}🧹 Limpieza completada.${NC}"
+delete_orphaned_containers
+
+for IMAGE in "${IMAGES[@]}"; do
+  delete_image "$IMAGE"
+done
+
+echo -e "${CYAN}🧹 Limpieza finalizada.${NC}"

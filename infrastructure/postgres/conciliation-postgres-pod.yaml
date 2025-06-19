@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: conciliation-postgres-pod
+spec:
+  containers:
+    - name: conciliation-postgres
+      image: postgres:15
+      ports:
+        - containerPort: 5432
+          hostPort: 5433
+      env:
+        - name: POSTGRES_DB
+          value: "conciliationdb"
+        - name: POSTGRES_USER
+          value: "admin"
+        - name: POSTGRES_PASSWORD
+          value: "Vengal#2025"
+      volumeMounts:
+        - name: conciliation-pgdata
+          mountPath: /var/lib/postgresql/data
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "250m"
+        limits:
+          memory: "512Mi"
+          cpu: "500m"
+  volumes:
+    - name: conciliation-pgdata
+      emptyDir: {}

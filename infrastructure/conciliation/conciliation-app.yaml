@@ -1,17 +1,19 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: auth-app-pod
+  name: conciliation-app-pod
 spec:
   containers:
-    - name: auth-service
-      image: auth-service-app:latest
+    - name: conciliation-service
+      image: conciliation-service-app:latest
       ports:
-        - containerPort: 8080
-          hostPort: 8080
+        - containerPort: 8081
+          hostPort: 8081
       env:
+        - name: SPRING_APPLICATION_NAME
+          value: conciliation-service
         - name: SPRING_DATASOURCE_URL
-          value: jdbc:postgresql://localhost:5432/authdb
+          value: jdbc:postgresql://host.containers.internal:5433/conciliationdb
         - name: SPRING_DATASOURCE_USERNAME
           value: admin
         - name: SPRING_DATASOURCE_PASSWORD
@@ -20,8 +22,8 @@ spec:
           value: update
       resources:
         requests:
-          memory: "256Mi"
-          cpu: "250m"
-        limits:
           memory: "512Mi"
           cpu: "500m"
+        limits:
+          memory: "1Gi"
+          cpu: "1"

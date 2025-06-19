@@ -1,4 +1,4 @@
-package com.vengalsas.core.auth;
+package com.vengalsas.core.conciliation.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

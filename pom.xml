@@ -16,10 +16,7 @@
   <!-- Módulos hijos -->
   <modules>
     <module>modules/auth-service</module>
-    <!-- 
-    <module>reconciliation-service</module>
-    <module>shared-kernel</module>
-    -->
+    <module>modules/conciliation-service</module>
   </modules>
 
   <properties>
