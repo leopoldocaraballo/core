@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: auth-app-pod
+spec:
+  containers:
+    - name: auth-service
+      image: auth-service-app:latest
+      ports:
+        - containerPort: 8080
+          hostPort: 8080
+      env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://localhost:5432/authdb
+        - name: SPRING_DATASOURCE_USERNAME
+          value: admin
+        - name: SPRING_DATASOURCE_PASSWORD
+          value: Vengal#2025
+        - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+          value: update
+        - name: SPRING_FLYWAY_ENABLED
+          value: "false"
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "250m"
+        limits:
+          memory: "512Mi"
+          cpu: "500m"
