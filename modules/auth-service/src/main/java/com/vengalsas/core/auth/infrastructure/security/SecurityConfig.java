@@ -44,6 +44,8 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.GET, "/api/v1/auth/me")
             .hasAnyAuthority("ROLE_USER", "ROLE_ADMIN", "ROLE_SUPERADMIN")
 
+            .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
+
             // Todas las demás requieren autenticación
             .anyRequest().authenticated())
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

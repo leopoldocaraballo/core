@@ -13,6 +13,7 @@ import com.vengalsas.core.auth.application.service.AuthService;
 import com.vengalsas.core.auth.domain.model.User;
 import com.vengalsas.core.auth.infrastructure.security.UserPrincipal;
 import com.vengalsas.core.auth.web.dto.request.LoginRequest;
+import com.vengalsas.core.auth.web.dto.request.LogoutRequest;
 import com.vengalsas.core.auth.web.dto.request.RefreshTokenRequest;
 import com.vengalsas.core.auth.web.dto.request.RegisterRequest;
 import com.vengalsas.core.auth.web.dto.response.LoginResponse;
@@ -54,5 +55,11 @@ public class AuthController {
   public ResponseEntity<LoginResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
     LoginResponse response = authService.refreshToken(request.getRefreshToken());
     return ResponseEntity.ok(response);
+  }
+
+  @PostMapping("/logout")
+  public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequest request) {
+    authService.logout(request.getRefreshToken(), request.getDeviceFingerprint());
+    return ResponseEntity.noContent().build();
   }
 }

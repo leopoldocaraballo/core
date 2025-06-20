@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.vengalsas.core.auth.domain.model.BusinessException;
 import com.vengalsas.core.auth.domain.model.RefreshToken;
 import com.vengalsas.core.auth.domain.model.Role;
 import com.vengalsas.core.auth.domain.model.RoleType;
@@ -173,5 +174,20 @@ public class AuthService {
         .refreshToken(newRefreshTokenRaw)
         .expiresIn(ACCESS_TOKEN_TTL_MINUTES * 60)
         .build();
+  }
+
+  @Transactional
+  public void logout(String refreshToken, String deviceFingerprint) {
+    var token = refreshTokenRepository.findAll().stream()
+        .filter(rt -> passwordEncoder.matches(refreshToken, rt.getTokenHash()))
+        .findFirst()
+        .orElseThrow(() -> new BusinessException("Refresh token no válido"));
+
+    if (!token.getDeviceFingerprint().equals(deviceFingerprint)) {
+      throw new BusinessException("Dispositivo no coincide con la sesión");
+    }
+
+    token.setRevoked(true);
+    refreshTokenRepository.save(token);
   }
 }
