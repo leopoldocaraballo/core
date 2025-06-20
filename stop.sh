@@ -1,55 +1,66 @@
 #!/bin/bash
-
 set -euo pipefail
 
-# Colores para mensajes
+# 🎨 Colores
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
-NC='\033[0m' # Sin color
+NC='\033[0m'
 
-# Verificación de dependencias
-if ! command -v podman &>/dev/null; then
-  echo -e "${RED}❌ Error: 'podman' no está instalado o no está en el PATH.${NC}"
-  exit 1
-fi
+echo -e "${CYAN}🛑 Deteniendo y limpiando entorno...${NC}"
 
-echo -e "${CYAN}🛑 Deteniendo y eliminando contenedores/pods...${NC}"
+# ==============================
+# 🔧 Funciones
+# ==============================
 
-# Función para eliminar pods
+require_dependency() {
+  if ! command -v "$1" &>/dev/null; then
+    echo -e "${RED}❌ Error: '$1' no está instalado o en el PATH.${NC}"
+    exit 1
+  fi
+}
+
 delete_pod() {
-  local POD_NAME="$1"
-  if podman pod exists "$POD_NAME"; then
-    podman pod rm -f "$POD_NAME" > /dev/null
-    echo -e "${GREEN}✅ Pod '${POD_NAME}' eliminado.${NC}"
+  local pod="$1"
+  if podman pod exists "$pod"; then
+    podman pod rm -f "$pod" > /dev/null
+    echo -e "${GREEN}✅ Pod '${pod}' eliminado.${NC}"
   else
-    echo -e "${YELLOW}⚠️  Pod '${POD_NAME}' no encontrado o ya eliminado.${NC}"
+    echo -e "${YELLOW}⚠️  Pod '${pod}' no existe.${NC}"
   fi
 }
 
-# Función para eliminar imágenes
-delete_image() {
-  local IMAGE_NAME="$1"
-  if podman images | grep -q "$IMAGE_NAME"; then
-    podman rmi -f "$IMAGE_NAME" > /dev/null
-    echo -e "${GREEN}🗑 Imagen '${IMAGE_NAME}' eliminada.${NC}"
+delete_image_if_unused() {
+  local image="$1"
+  if podman images --format "{{.Repository}}:{{.Tag}}" | grep -qx "$image"; then
+    if podman ps -a --format "{{.Image}}" | grep -q "$image"; then
+      echo -e "${YELLOW}⚠️  Imagen '${image}' está en uso. No se elimina.${NC}"
+    else
+      podman rmi -f "$image" > /dev/null
+      echo -e "${GREEN}🗑 Imagen '${image}' eliminada.${NC}"
+    fi
   else
-    echo -e "${YELLOW}⚠️  Imagen '${IMAGE_NAME}' no encontrada.${NC}"
+    echo -e "${YELLOW}⚠️  Imagen '${image}' no encontrada.${NC}"
   fi
 }
 
-# Función para eliminar contenedores huérfanos (infraestructura temporal)
-delete_orphaned_containers() {
-  local CONTAINERS
-  CONTAINERS=$(podman ps -a --format '{{.Names}}' | grep 'infra$' || true)
-  for container in $CONTAINERS; do
-    podman rm -f "$container" > /dev/null
-    echo -e "${GREEN}🧽 Contenedor huérfano '${container}' eliminado.${NC}"
+delete_infra_containers() {
+  podman ps -a --format '{{.Names}}' | grep 'infra$' || return
+  for orphan in $(podman ps -a --format '{{.Names}}' | grep 'infra$'); do
+    podman rm -f "$orphan" > /dev/null
+    echo -e "${GREEN}🧽 Contenedor huérfano '${orphan}' eliminado.${NC}"
   done
 }
 
-# Lista de pods a eliminar
+# ==============================
+# 🔍 Verificación de dependencias
+# ==============================
+require_dependency podman
+
+# ==============================
+# 📦 Listas
+# ==============================
 PODS=(
   "auth-app-pod"
   "auth-pod"
@@ -57,22 +68,23 @@ PODS=(
   "conciliation-postgres-pod"
 )
 
-
-
-# Lista de imágenes a eliminar
 IMAGES=(
   "auth-service-app:latest"
   "conciliation-service-app:latest"
 )
 
-for POD in "${PODS[@]}"; do
-  delete_pod "$POD"
+# ==============================
+# 🧹 Limpieza
+# ==============================
+
+for pod in "${PODS[@]}"; do
+  delete_pod "$pod"
 done
 
-delete_orphaned_containers
+delete_infra_containers
 
-for IMAGE in "${IMAGES[@]}"; do
-  delete_image "$IMAGE"
+for image in "${IMAGES[@]}"; do
+  delete_image_if_unused "$image"
 done
 
-echo -e "${CYAN}🧹 Limpieza finalizada.${NC}"
+echo -e "${GREEN}✅ Limpieza completa.${NC}"

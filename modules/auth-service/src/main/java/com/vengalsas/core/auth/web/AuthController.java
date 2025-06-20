@@ -17,12 +17,14 @@ import com.vengalsas.core.auth.web.dto.response.LoginResponse;
 import com.vengalsas.core.auth.web.dto.response.RegisterResponse;
 import com.vengalsas.core.auth.web.dto.response.UserProfileResponse;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
+@Tag(name = "Authentication API", description = "Operaciones de autenticación y autorización")
 public class AuthController {
 
   private final AuthService authService;

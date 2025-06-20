@@ -11,7 +11,7 @@ spec:
           hostPort: 8080
       env:
         - name: SPRING_DATASOURCE_URL
-          value: jdbc:postgresql://localhost:5432/authdb
+          value: jdbc:postgresql://auth-postgres:5432/authdb
         - name: SPRING_DATASOURCE_USERNAME
           value: admin
         - name: SPRING_DATASOURCE_PASSWORD

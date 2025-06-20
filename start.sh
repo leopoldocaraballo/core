@@ -1,85 +1,77 @@
 #!/bin/bash
-
 set -euo pipefail
 
-# Colores
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m'
+# ==============================
+# 🎨 Colores
+# ==============================
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
 
-# Paths y nombres comunes
-AUTH_SERVICE_DIR="modules/auth-service"
-CONCILIATION_SERVICE_DIR="modules/conciliation-service"
-
-AUTH_JAR="$AUTH_SERVICE_DIR/target/auth-service-0.0.1-SNAPSHOT.jar"
-CONCILIATION_JAR="$CONCILIATION_SERVICE_DIR/target/conciliation-service-0.0.1-SNAPSHOT.jar"
+# ==============================
+# 🧾 Paths
+# ==============================
+AUTH_DIR="modules/auth-service"
+CONCILIATION_DIR="modules/conciliation-service"
 
 AUTH_IMAGE="auth-service-app:latest"
 CONCILIATION_IMAGE="conciliation-service-app:latest"
 
-AUTH_INFRA="infrastructure/auth/auth-app.yaml"
-CONCILIATION_INFRA="infrastructure/conciliation/conciliation-app.yaml"
+INFRA_DIR="infrastructure"
+AUTH_INFRA="$INFRA_DIR/auth/auth-app.yaml"
+AUTH_DB_INFRA="$INFRA_DIR/postgres/postgres-pod.yaml"
+CONCILIATION_INFRA="$INFRA_DIR/conciliation/conciliation-app.yaml"
+CONCILIATION_DB_INFRA="$INFRA_DIR/postgres/conciliation-postgres-pod.yaml"
 
-AUTH_DB_INFRA="infrastructure/postgres/postgres-pod.yaml"
-CONCILIATION_DB_INFRA="infrastructure/postgres/conciliation-postgres-pod.yaml"
+# ==============================
+# ⚙️ Funciones Utilitarias
+# ==============================
 
-AUTH_POSTGRES_CONTAINER="auth-pod-auth-postgres"
-CONCILIATION_POSTGRES_CONTAINER="conciliation-postgres-pod-conciliation-postgres"
+log() { echo -e "${CYAN}$1${NC}"; }
+info() { echo -e "${YELLOW}$1${NC}"; }
+success() { echo -e "${GREEN}$1${NC}"; }
+fail() { echo -e "${RED}$1${NC}"; }
 
-# Paso 1: Compilar todo el proyecto
-echo -e "${CYAN}📦 Compilando todo el proyecto Maven...${NC}"
+wait_for_postgres() {
+  local container_name="$1"
+  local db="$2"
+  info "⌛ Esperando base de datos '$db' en contenedor '$container_name'..."
+  until podman exec "$container_name" psql -U admin -d "$db" -c '\q' > /dev/null 2>&1; do
+    sleep 6
+  done
+  success "✅ Base de datos '$db' lista."
+}
+
+# ==============================
+# 🛠️ Build y Deploy
+# ==============================
+
+log "📦 Compilando proyecto Maven..."
 ./mvnw clean package -DskipTests > /dev/null
 
-# Validar JARs
-[[ -f "$AUTH_JAR" ]] || { echo -e "${RED}❌ JAR de auth-service no encontrado${NC}"; exit 1; }
-[[ -f "$CONCILIATION_JAR" ]] || { echo -e "${RED}❌ JAR de conciliation-service no encontrado${NC}"; exit 1; }
+[[ -f "$AUTH_DIR/target/auth-service-0.0.1-SNAPSHOT.jar" ]] || { fail "❌ auth-service JAR no encontrado"; exit 1; }
+[[ -f "$CONCILIATION_DIR/target/conciliation-service-0.0.1-SNAPSHOT.jar" ]] || { fail "❌ conciliation-service JAR no encontrado"; exit 1; }
+success "✅ JARs compilados correctamente."
 
-echo -e "${GREEN}✅ JARs generados correctamente.${NC}"
+log "🔨 Construyendo imágenes (en paralelo)..."
+podman build -t "$AUTH_IMAGE" -f "$AUTH_DIR/Containerfile" "$AUTH_DIR" > /dev/null &
+podman build -t "$CONCILIATION_IMAGE" -f "$CONCILIATION_DIR/Containerfile" "$CONCILIATION_DIR" > /dev/null &
+wait
+success "✅ Imágenes construidas."
 
-# Paso 2: Construcción de imágenes
-echo -e "${CYAN}🔨 Construyendo imagen auth-service...${NC}"
-podman build -t "$AUTH_IMAGE" -f "$AUTH_SERVICE_DIR/Containerfile" "$AUTH_SERVICE_DIR" > /dev/null
-echo -e "${GREEN}✅ Imagen auth-service lista.${NC}"
-
-echo -e "${CYAN}🔨 Construyendo imagen conciliation-service...${NC}"
-podman build -t "$CONCILIATION_IMAGE" -f "$CONCILIATION_SERVICE_DIR/Containerfile" "$CONCILIATION_SERVICE_DIR" > /dev/null
-echo -e "${GREEN}✅ Imagen conciliation-service lista.${NC}"
-
-# Paso 3: Iniciar PostgreSQL para auth
-echo -e "${CYAN}🐘 Iniciando PostgreSQL para auth-service...${NC}"
+log "🐘 Iniciando PostgreSQL para auth-service..."
 podman play kube "$AUTH_DB_INFRA" > /dev/null
+wait_for_postgres "auth-pod-auth-postgres" "authdb"
 
-# Paso 4: Esperar PostgreSQL auth
-echo -e "${YELLOW}⌛ Esperando PostgreSQL authdb...${NC}"
-until podman exec "$AUTH_POSTGRES_CONTAINER" psql -U admin -d authdb -c '\q' > /dev/null 2>&1; do
-  echo -e "${YELLOW}⏳ Esperando authdb...${NC}"
-  sleep 2
-done
-echo -e "${GREEN}✅ PostgreSQL authdb listo.${NC}"
-
-# Paso 5: Iniciar auth-service
-echo -e "${CYAN}🚀 Iniciando auth-service...${NC}"
+log "🚀 Iniciando auth-service..."
 podman play kube "$AUTH_INFRA" > /dev/null
-echo -e "${GREEN}✅ auth-service iniciado.${NC}"
+success "✅ auth-service desplegado."
 
-# Paso 6: Iniciar PostgreSQL para conciliation
-echo -e "${CYAN}🐘 Iniciando PostgreSQL para conciliation-service...${NC}"
+log "🐘 Iniciando PostgreSQL para conciliation-service..."
 podman play kube "$CONCILIATION_DB_INFRA" > /dev/null
+wait_for_postgres "conciliation-postgres-pod-conciliation-postgres" "conciliationdb"
 
-# Paso 7: Esperar PostgreSQL conciliation
-echo -e "${YELLOW}⌛ Esperando PostgreSQL conciliationdb...${NC}"
-until podman exec "$CONCILIATION_POSTGRES_CONTAINER" psql -U admin -d conciliationdb -c '\q' > /dev/null 2>&1; do
-  echo -e "${YELLOW}⏳ Esperando conciliationdb...${NC}"
-  sleep 2
-done
-echo -e "${GREEN}✅ PostgreSQL conciliationdb listo.${NC}"
-
-# Paso 8: Iniciar conciliation-service
-echo -e "${CYAN}🚀 Iniciando conciliation-service...${NC}"
+log "🚀 Iniciando conciliation-service..."
 podman play kube "$CONCILIATION_INFRA" > /dev/null
-echo -e "${GREEN}✅ conciliation-service iniciado.${NC}"
+success "✅ conciliation-service desplegado."
 
-# Final
-echo -e "${GREEN}🎉 Todos los servicios están levantados correctamente.${NC}"
+sleep 60
+success "🎉 Todos los servicios están levantados correctamente."

@@ -36,13 +36,17 @@ public class DataInitializer {
                 .build()));
       }
 
-      // Crear superadmin si no existe
-      if (!userRepository.existsByEmailIgnoreCase("leopoldo.caraballo@vengalsas.com")) {
+      // Crear usuario SUPERADMIN si no existe
+      final String email = "leopoldo.caraballo@vengalsas.com";
+      if (!userRepository.existsByEmailIgnoreCase(email)) {
         Role superAdminRole = roleRepository.findByName(RoleType.SUPERADMIN)
-            .orElseThrow();
+            .orElseGet(() -> roleRepository.save(Role.builder()
+                .name(RoleType.SUPERADMIN)
+                .description("Rol SUPERADMIN")
+                .build()));
 
         User superAdmin = User.builder()
-            .email("leopoldo.caraballo@vengalsas.com")
+            .email(email)
             .password(passwordEncoder.encode("Vengal#2025"))
             .roles(Set.of(superAdminRole))
             .emailVerified(true)
@@ -54,6 +58,8 @@ public class DataInitializer {
 
         userRepository.save(superAdmin);
         System.out.println("✔ Usuario SUPERADMIN creado por defecto.");
+      } else {
+        System.out.println("ℹ Usuario SUPERADMIN ya existe.");
       }
     };
   }
