@@ -22,7 +22,7 @@ public class SecurityConfig {
 
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-    http
+    return http
         .csrf(csrf -> csrf.disable())
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
@@ -36,18 +36,18 @@ public class SecurityConfig {
                 "/actuator/**")
             .permitAll()
 
-            .requestMatchers("/api/v1/auth/register")
+            // Solo ADMIN o SUPERADMIN pueden registrar
+            .requestMatchers(HttpMethod.POST, "/api/v1/auth/register")
             .hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPERADMIN")
-            .anyRequest().hasAnyAuthority("ROLE_USER", "ROLE_ADMIN", "ROLE_SUPERADMIN")
 
+            // Perfil disponible para cualquier rol autenticado
             .requestMatchers(HttpMethod.GET, "/api/v1/auth/me")
-            .authenticated()
+            .hasAnyAuthority("ROLE_USER", "ROLE_ADMIN", "ROLE_SUPERADMIN")
 
-            .anyRequest()
-            .hasAnyRole("USER", "ADMIN", "SUPERADMIN"))
-        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-
-    return http.build();
+            // Todas las demás requieren autenticación
+            .anyRequest().authenticated())
+        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+        .build();
   }
 
   @Bean

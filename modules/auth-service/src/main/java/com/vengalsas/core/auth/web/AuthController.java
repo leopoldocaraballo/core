@@ -8,8 +8,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.vengalsas.core.auth.application.mapper.UserMapper;
 import com.vengalsas.core.auth.application.service.AuthService;
 import com.vengalsas.core.auth.domain.model.User;
+import com.vengalsas.core.auth.infrastructure.security.UserPrincipal;
 import com.vengalsas.core.auth.web.dto.request.LoginRequest;
 import com.vengalsas.core.auth.web.dto.request.RefreshTokenRequest;
 import com.vengalsas.core.auth.web.dto.request.RegisterRequest;
@@ -28,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 public class AuthController {
 
   private final AuthService authService;
+  private final UserMapper userMapper;
 
   @PostMapping("/register")
   public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
@@ -42,9 +45,9 @@ public class AuthController {
   }
 
   @GetMapping("/me")
-  public ResponseEntity<UserProfileResponse> getProfile(@AuthenticationPrincipal User user) {
-    UserProfileResponse response = authService.getProfile(user);
-    return ResponseEntity.ok(response);
+  public ResponseEntity<UserProfileResponse> getProfile(@AuthenticationPrincipal UserPrincipal principal) {
+    User user = principal.getUser();
+    return ResponseEntity.ok(userMapper.toProfileResponse(user));
   }
 
   @PostMapping("/refresh-token")

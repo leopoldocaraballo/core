@@ -24,7 +24,7 @@ public class JwtTokenProvider {
   @Value("${security.jwt.access-token-expiration-minutes:15}")
   private long accessTokenExpirationMinutes;
 
-  private final KeyPair keyPair; // Inyectado como @Bean en Config
+  private final KeyPair keyPair;
 
   public String generateAccessToken(User user, String jti, String sessionId) {
     Instant now = Instant.now();
