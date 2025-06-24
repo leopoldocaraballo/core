@@ -70,4 +70,9 @@ public class User {
 
   @UpdateTimestamp
   private Instant updatedAt;
+
+  public boolean hasRole(RoleType roleType) {
+    return roles != null && roles.stream()
+        .anyMatch(role -> role.getName() == roleType);
+  }
 }

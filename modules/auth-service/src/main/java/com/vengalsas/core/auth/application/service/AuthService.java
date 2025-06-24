@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -45,21 +46,17 @@ public class AuthService {
   public RegisterResponse register(RegisterRequest request) {
     String email = request.getEmail().toLowerCase().trim();
 
-    if (email.isEmpty() || request.getPassword().isEmpty()) {
+    if (email.isEmpty() || request.getPassword().isEmpty())
       throw new IllegalArgumentException("Email y contraseña no pueden estar vacíos");
-    }
 
-    if (!request.getPassword().equals(request.getConfirmPassword())) {
+    if (!request.getPassword().equals(request.getConfirmPassword()))
       throw new IllegalArgumentException("Las contraseñas no coinciden");
-    }
 
-    if (!request.isAcceptedPrivacyPolicy()) {
+    if (!request.isAcceptedPrivacyPolicy())
       throw new IllegalArgumentException("Debes aceptar la política de privacidad");
-    }
 
-    if (userRepository.existsByEmailIgnoreCase(email)) {
+    if (userRepository.existsByEmailIgnoreCase(email))
       throw new IllegalArgumentException("El correo ya está en uso");
-    }
 
     Role userRole = roleRepository.findByName(RoleType.USER)
         .orElseThrow(() -> new IllegalStateException("Rol por defecto USER no encontrado"));
@@ -81,13 +78,15 @@ public class AuthService {
   public LoginResponse authenticate(LoginRequest request) {
     String email = request.getEmail().trim();
 
-    User user = userRepository.findByEmailIgnoreCase(email)
-        .orElseThrow(() -> new IllegalArgumentException("Credenciales inválidas"));
+    User user = userRepository.findByEmailWithRoles(email)
+        .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado"));
 
     if (!user.isActive())
       throw new IllegalStateException("Cuenta desactivada");
+
     if (user.isAccountLocked())
       throw new IllegalStateException("Cuenta bloqueada");
+
     if (!user.isEmailVerified())
       throw new IllegalStateException("Correo no verificado");
 
@@ -100,10 +99,91 @@ public class AuthService {
       throw new IllegalArgumentException("Credenciales inválidas");
     }
 
-    user.setLoginAttempts(0);
+    user.setLoginAttempts(0); // reset
     userRepository.save(user);
 
+    return generateLoginResponse(user, request.getDeviceFingerprint());
+  }
+
+  public UserProfileResponse getProfile(User user) {
+    return UserProfileResponse.builder()
+        .id(user.getId())
+        .email(user.getEmail())
+        .roles(user.getRoles().stream()
+            .map(role -> role.getName().name())
+            .collect(Collectors.toUnmodifiableSet()))
+        // .emailVerified(user.isEmailVerified())
+        .emailVerified(true)
+        .accountLocked(user.isAccountLocked())
+        .active(user.isActive())
+        .createdAt(user.getCreatedAt())
+        .lastUpdated(user.getUpdatedAt())
+        .build();
+  }
+
+  @Transactional
+  public LoginResponse refreshToken(String refreshTokenRaw) {
+    RefreshToken oldToken = findValidRefreshToken(refreshTokenRaw);
+
+    oldToken.setRevoked(true);
+    refreshTokenRepository.save(oldToken);
+
+    return generateLoginResponse(oldToken.getUser(), oldToken.getDeviceFingerprint(), oldToken.getSessionId());
+  }
+
+  @Transactional
+  public void logout(String refreshTokenRaw, String deviceFingerprint) {
+    RefreshToken token = findValidRefreshToken(refreshTokenRaw);
+
+    if (!token.getDeviceFingerprint().equals(deviceFingerprint))
+      throw new BusinessException("Dispositivo no coincide con la sesión");
+
+    token.setRevoked(true);
+    refreshTokenRepository.save(token);
+  }
+
+  @Transactional
+  public void softDeleteUser(UUID userId, User actor) {
+    User user = getUserById(userId);
+    checkAccessControl(actor, user);
+    user.setActive(false);
+    user.setAccountLocked(true);
+    userRepository.save(user);
+  }
+
+  @Transactional
+  public void disableUser(UUID userId, User actor) {
+    User user = getUserById(userId);
+    checkAccessControl(actor, user);
+    user.setActive(false);
+    userRepository.save(user);
+  }
+
+  @Transactional
+  public void enableUser(UUID userId, User actor) {
+    User user = getUserById(userId);
+    checkAccessControl(actor, user);
+    user.setActive(true);
+    user.setAccountLocked(false);
+    userRepository.save(user);
+  }
+
+  // ---------- MÉTODOS PRIVADOS AUXILIARES ----------
+
+  private RefreshToken findValidRefreshToken(String rawToken) {
+    return refreshTokenRepository.findAll().stream()
+        .filter(rt -> passwordEncoder.matches(rawToken, rt.getTokenHash()))
+        .filter(rt -> !rt.isRevoked() && rt.getExpiresAt().isAfter(Instant.now()))
+        .findFirst()
+        .orElseThrow(() -> new BusinessException("Refresh token inválido o expirado"));
+  }
+
+  private LoginResponse generateLoginResponse(User user, String fingerprint) {
     String sessionId = UUID.randomUUID().toString();
+    return generateLoginResponse(user, fingerprint, sessionId);
+  }
+
+  private LoginResponse generateLoginResponse(User user, String fingerprint, String sessionId) {
     String jti = UUID.randomUUID().toString();
     String accessToken = jwtTokenProvider.generateAccessToken(user, jti, sessionId);
     String refreshTokenRaw = jwtTokenProvider.generateRefreshToken();
@@ -112,7 +192,7 @@ public class AuthService {
         .user(user)
         .tokenHash(passwordEncoder.encode(refreshTokenRaw))
         .sessionId(sessionId)
-        .deviceFingerprint(request.getDeviceFingerprint())
+        .deviceFingerprint(fingerprint)
         .expiresAt(Instant.now().plus(REFRESH_TOKEN_TTL_DAYS, ChronoUnit.DAYS))
         .build();
 
@@ -125,69 +205,23 @@ public class AuthService {
         .build();
   }
 
-  public UserProfileResponse getProfile(User user) {
-    return UserProfileResponse.builder()
-        .id(user.getId())
-        .email(user.getEmail())
-        .roles(user.getRoles().stream()
-            .map(role -> role.getName().name())
-            .collect(Collectors.toUnmodifiableSet()))
-        .emailVerified(user.isEmailVerified())
-        .accountLocked(user.isAccountLocked())
-        .active(user.isActive())
-        .createdAt(user.getCreatedAt())
-        .lastUpdated(user.getUpdatedAt())
-        .build();
+  private User getUserById(UUID userId) {
+    return userRepository.findById(userId)
+        .orElseThrow(() -> new BusinessException("Usuario no encontrado"));
   }
 
-  @Transactional
-  public LoginResponse refreshToken(String refreshTokenRaw) {
-    RefreshToken oldToken = refreshTokenRepository.findAll().stream()
-        .filter(rt -> passwordEncoder.matches(refreshTokenRaw, rt.getTokenHash()))
-        .findFirst()
-        .orElseThrow(() -> new IllegalArgumentException("Refresh token inválido"));
+  private void checkAccessControl(User actor, User target) {
+    if (actor.getId().equals(target.getId()))
+      throw new BusinessException("No puedes modificarte a ti mismo");
 
-    if (oldToken.isRevoked() || oldToken.getExpiresAt().isBefore(Instant.now())) {
-      throw new IllegalStateException("Refresh token revocado o expirado");
-    }
+    boolean isActorSuperadmin = actor.hasRole(RoleType.SUPERADMIN);
+    boolean isTargetSuperadmin = target.hasRole(RoleType.SUPERADMIN);
+    boolean isTargetAdmin = target.hasRole(RoleType.ADMIN);
 
-    oldToken.setRevoked(true);
-    refreshTokenRepository.save(oldToken);
+    if (!isActorSuperadmin && (isTargetSuperadmin || isTargetAdmin))
+      throw new BusinessException("No puedes modificar este usuario");
 
-    User user = oldToken.getUser();
-    String newJti = UUID.randomUUID().toString();
-    String newAccessToken = jwtTokenProvider.generateAccessToken(user, newJti, oldToken.getSessionId());
-    String newRefreshTokenRaw = jwtTokenProvider.generateRefreshToken();
-
-    RefreshToken newRefreshToken = RefreshToken.builder()
-        .user(user)
-        .tokenHash(passwordEncoder.encode(newRefreshTokenRaw))
-        .sessionId(oldToken.getSessionId())
-        .deviceFingerprint(oldToken.getDeviceFingerprint())
-        .expiresAt(Instant.now().plus(REFRESH_TOKEN_TTL_DAYS, ChronoUnit.DAYS))
-        .build();
-
-    refreshTokenRepository.save(newRefreshToken);
-
-    return LoginResponse.builder()
-        .accessToken(newAccessToken)
-        .refreshToken(newRefreshTokenRaw)
-        .expiresIn(ACCESS_TOKEN_TTL_MINUTES * 60)
-        .build();
-  }
-
-  @Transactional
-  public void logout(String refreshToken, String deviceFingerprint) {
-    var token = refreshTokenRepository.findAll().stream()
-        .filter(rt -> passwordEncoder.matches(refreshToken, rt.getTokenHash()))
-        .findFirst()
-        .orElseThrow(() -> new BusinessException("Refresh token no válido"));
-
-    if (!token.getDeviceFingerprint().equals(deviceFingerprint)) {
-      throw new BusinessException("Dispositivo no coincide con la sesión");
-    }
-
-    token.setRevoked(true);
-    refreshTokenRepository.save(token);
+    if (!actor.hasRole(RoleType.SUPERADMIN) && !actor.hasRole(RoleType.ADMIN))
+      throw new BusinessException("No tienes permisos para esta operación");
   }
 }

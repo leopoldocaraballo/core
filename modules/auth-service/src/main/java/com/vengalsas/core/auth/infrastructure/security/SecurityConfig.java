@@ -46,6 +46,10 @@ public class SecurityConfig {
 
             .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
 
+            .requestMatchers(HttpMethod.PATCH, "/api/v1/users/*/disable").hasAuthority("ROLE_SUPERADMIN")
+            .requestMatchers(HttpMethod.PATCH, "/api/v1/users/*/enable").hasAuthority("ROLE_SUPERADMIN")
+            .requestMatchers(HttpMethod.DELETE, "/api/v1/users/*/soft-delete").hasAuthority("ROLE_SUPERADMIN")
+
             // Todas las demás requieren autenticación
             .anyRequest().authenticated())
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
