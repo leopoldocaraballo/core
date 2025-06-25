@@ -39,6 +39,12 @@
       <artifactId>spring-boot-starter-data-jpa</artifactId>
     </dependency>
 
+    <!-- Validación -->
+    <dependency>
+      <groupId>jakarta.validation</groupId>
+      <artifactId>jakarta.validation-api</artifactId>
+    </dependency>
+
     <!-- PostgreSQL Driver -->
     <dependency>
       <groupId>org.postgresql</groupId>
@@ -64,11 +70,38 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!-- Apache POI para leer archivos Excel -->
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>5.2.5</version>
+    </dependency>
+
+    <!-- Commons CSV (si quieres leer TXT tipo CSV) -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-csv</artifactId>
+      <version>1.10.0</version>
+    </dependency>
+
+    <!-- Swagger / OpenAPI -->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>2.3.0</version>
+    </dependency>
+
     <!-- Lombok -->
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
       <optional>true</optional>
+    </dependency>
+
+    <!-- Utilidades -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
     </dependency>
 
     <!-- Testing -->
@@ -90,13 +123,12 @@
         <executions>
           <execution>
             <goals>
-              <goal>repackage</goal> <!-- Para crear el JAR ejecutable -->
+              <goal>repackage</goal>
             </goals>
           </execution>
         </executions>
       </plugin>
     </plugins>
   </build>
-
 
 </project>
