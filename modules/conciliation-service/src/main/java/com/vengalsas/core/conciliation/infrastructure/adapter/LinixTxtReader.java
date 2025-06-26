@@ -27,33 +27,39 @@ public class LinixTxtReader {
   public List<Transaction> read(InputStream inputStream) {
     List<Transaction> transactions = new ArrayList<>();
 
-    try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.ISO_8859_1))) {
+    try (BufferedReader reader = new BufferedReader(
+        new InputStreamReader(inputStream, StandardCharsets.ISO_8859_1))) {
+
       String line;
       while ((line = reader.readLine()) != null) {
         if (!line.startsWith("Concepto") || !line.contains("\t"))
           continue;
 
         String[] parts = line.split("\t");
+        if (parts.length < 19)
+          continue;
 
         try {
           String dateStr = parts[11].trim();
           String description = parts[15].trim();
-          String debitStr = parts[17].trim().replace(",", "").replace(".00", "");
-          String creditStr = parts[18].trim().replace(",", "").replace(".00", "");
+          String debitStr = parts[17].trim().replace(",", "");
+          String creditStr = parts[18].trim().replace(",", "");
 
           LocalDate date = LocalDate.parse(dateStr, DATE_FORMAT);
+          BigDecimal debit = debitStr.isEmpty() ? BigDecimal.ZERO : new BigDecimal(debitStr);
+          BigDecimal credit = creditStr.isEmpty() ? BigDecimal.ZERO : new BigDecimal(creditStr);
 
           BigDecimal amount;
           TransactionType type;
 
-          if (!creditStr.isEmpty() && new BigDecimal(creditStr).compareTo(BigDecimal.ZERO) > 0) {
-            amount = new BigDecimal(creditStr);
+          if (debit.compareTo(BigDecimal.ZERO) > 0) {
+            amount = debit.abs();
             type = TransactionType.DEBIT;
-          } else if (!debitStr.isEmpty() && new BigDecimal(debitStr).compareTo(BigDecimal.ZERO) > 0) {
-            amount = new BigDecimal(debitStr);
+          } else if (credit.compareTo(BigDecimal.ZERO) > 0) {
+            amount = credit.abs();
             type = TransactionType.CREDIT;
           } else {
-            continue; // No hay valor válido
+            continue; // Transacción sin valor monetario válido
           }
 
           Transaction transaction = Transaction.builder()
@@ -68,9 +74,10 @@ public class LinixTxtReader {
           transactions.add(transaction);
 
         } catch (Exception e) {
-          log.warn("Línea ignorada por error de formato: {}", line);
+          log.warn("Línea ignorada por error de formato o conversión: {}", line);
         }
       }
+
     } catch (Exception e) {
       log.error("Error al leer el archivo Linix: {}", e.getMessage(), e);
     }

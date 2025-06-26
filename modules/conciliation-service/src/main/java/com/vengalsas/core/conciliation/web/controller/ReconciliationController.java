@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,29 +22,36 @@ import com.vengalsas.core.conciliation.web.dto.NormalizedTransactionResponseDTO;
 import com.vengalsas.core.conciliation.web.dto.ReconciliationRequestDTO;
 import com.vengalsas.core.conciliation.web.dto.TransactionResponseDTO;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/v1/conciliation")
 @RequiredArgsConstructor
+@Tag(name = "Conciliation", description = "Endpoints for reconciling bank and accounting transactions")
 public class ReconciliationController {
 
   private final ReconciliationService reconciliationService;
   private static final Logger logger = LoggerFactory.getLogger(ReconciliationController.class);
 
   /**
-   * Endpoint to upload and normalize transactions from Bancolombia and Linix
-   * files.
+   * Uploads two files and normalizes transactions by source system.
    */
+  @Operation(summary = "Upload bank and accounting files", description = "Reads Bancolombia (.xlsx) and Linix (.csv or .txt) files, extracts transactions, and returns them normalized.", responses = {
+      @ApiResponse(responseCode = "200", description = "Normalized transactions returned"),
+      @ApiResponse(responseCode = "400", description = "Invalid or missing files", content = @Content)
+  })
   @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-  public NormalizedTransactionResponseDTO uploadFiles(
+  public ResponseEntity<NormalizedTransactionResponseDTO> uploadFiles(
       @RequestPart("bankFile") MultipartFile bankFile,
       @RequestPart("accountingFile") MultipartFile accountingFile) throws Exception {
 
     if (bankFile == null || bankFile.isEmpty()) {
       throw new IllegalArgumentException("Bank file is missing or empty.");
     }
-
     if (accountingFile == null || accountingFile.isEmpty()) {
       throw new IllegalArgumentException("Accounting file is missing or empty.");
     }
@@ -64,30 +72,47 @@ public class ReconciliationController {
         .map(this::toDto)
         .collect(Collectors.toList());
 
+    if (linixTransactions.isEmpty()) {
+      logger.warn("No Linix transactions found in file.");
+    }
+    if (bancolombiaTransactions.isEmpty()) {
+      logger.warn("No Bancolombia transactions found in file.");
+    }
+
     logger.info("Parsed {} Linix transactions and {} Bancolombia transactions",
         linixTransactions.size(), bancolombiaTransactions.size());
 
-    return NormalizedTransactionResponseDTO.builder()
+    return ResponseEntity.ok(NormalizedTransactionResponseDTO.builder()
         .linixTransactions(linixTransactions)
         .bancolombiaTransactions(bancolombiaTransactions)
-        .build();
+        .build());
   }
 
   /**
-   * Endpoint to reconcile transactions provided in the request body.
+   * Performs transaction reconciliation between uploaded sources.
    */
+  @Operation(summary = "Reconcile transactions", description = "Receives lists of Linix and Bancolombia transactions and returns matched/unmatched results.", responses = {
+      @ApiResponse(responseCode = "200", description = "Reconciliation results returned"),
+      @ApiResponse(responseCode = "400", description = "Invalid request body", content = @Content)
+  })
   @PostMapping(value = "/reconcile", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-  public List<ConciliationResultDTO> reconcile(@RequestBody ReconciliationRequestDTO request) {
-    if (request == null || request.getLinixTransactions() == null || request.getBancolombiaTransactions() == null) {
+  public ResponseEntity<List<ConciliationResultDTO>> reconcile(@RequestBody ReconciliationRequestDTO request) {
+    if (request == null ||
+        request.getLinixTransactions() == null || request.getLinixTransactions().isEmpty() ||
+        request.getBancolombiaTransactions() == null || request.getBancolombiaTransactions().isEmpty()) {
       throw new IllegalArgumentException("Reconciliation request body is invalid or missing.");
     }
 
     logger.info("Reconciling {} Linix and {} Bancolombia transactions",
         request.getLinixTransactions().size(), request.getBancolombiaTransactions().size());
 
-    return reconciliationService.reconcileTransactions(request);
+    List<ConciliationResultDTO> results = reconciliationService.reconcileTransactions(request);
+    return ResponseEntity.ok(results);
   }
 
+  /**
+   * Converts a Transaction entity to its DTO representation.
+   */
   private TransactionResponseDTO toDto(Transaction tx) {
     return TransactionResponseDTO.builder()
         .date(tx.getDate())

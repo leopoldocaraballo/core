@@ -5,7 +5,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DateUtil;
@@ -30,44 +32,55 @@ public class BancolombiaExcelReader {
 
     try (Workbook workbook = WorkbookFactory.create(inputStream)) {
       Sheet sheet = workbook.getSheetAt(0);
-      boolean foundMovements = false;
+      int headerRowIndex = -1;
+      Map<String, Integer> columnMap = new HashMap<>();
 
       for (Row row : sheet) {
-        if (!foundMovements) {
-          if (cellText(row.getCell(0)).toLowerCase().contains("movimientos")) {
-            foundMovements = true;
+        if (headerRowIndex == -1 && row != null) {
+          for (Cell cell : row) {
+            String text = cellText(cell).toLowerCase();
+            if (text.contains("fecha") || text.contains("descripción") || text.contains("valor")) {
+              headerRowIndex = row.getRowNum();
+              break;
+            }
           }
           continue;
         }
 
-        // Fila de encabezado de movimientos: FECHA | DESCRIPCIÓN | ...
-        if (cellText(row.getCell(0)).equalsIgnoreCase("FECHA")) {
+        if (row == null || row.getRowNum() <= headerRowIndex)
           continue;
+
+        if (columnMap.isEmpty()) {
+          for (Cell cell : sheet.getRow(headerRowIndex)) {
+            String name = cellText(cell).trim().toLowerCase();
+            columnMap.put(name, cell.getColumnIndex());
+          }
         }
 
         try {
-          String rawDate = cellText(row.getCell(0));
-          String description = cellText(row.getCell(1));
-          String amountStr = cellText(row.getCell(4)).replace(",", "").trim(); // conserva los decimales
+          String rawDate = getCellValue(row, columnMap, "fecha");
+          String description = getCellValue(row, columnMap, "descripción");
+          String amountStr = getCellValue(row, columnMap, "valor");
 
           if (rawDate.isEmpty() || description.isEmpty() || amountStr.isEmpty())
             continue;
 
           LocalDate date = parseDate(rawDate);
-          BigDecimal amount = new BigDecimal(amountStr);
+          BigDecimal rawAmount = new BigDecimal(amountStr.replace(",", "").trim());
+          BigDecimal amount = rawAmount.abs();
 
-          TransactionType type = guessTypeFromDescription(description);
+          TransactionType type = rawAmount.signum() < 0 ? TransactionType.DEBIT : guessTypeFromDescription(description);
 
-          Transaction transaction = Transaction.builder()
+          Transaction tx = Transaction.builder()
               .date(date)
               .description(description)
-              .amount(amount.abs()) // usar valor absoluto
+              .amount(amount)
               .transactionType(type)
               .source(SourceSystem.BANCOLUMBIA)
               .reference("")
               .build();
 
-          transactions.add(transaction);
+          transactions.add(tx);
         } catch (Exception e) {
           System.err.println("Error parsing row " + row.getRowNum() + ": " + e.getMessage());
         }
@@ -75,6 +88,11 @@ public class BancolombiaExcelReader {
     }
 
     return transactions;
+  }
+
+  private String getCellValue(Row row, Map<String, Integer> columnMap, String columnName) {
+    Integer index = columnMap.get(columnName.toLowerCase());
+    return (index != null) ? cellText(row.getCell(index)) : "";
   }
 
   private LocalDate parseDate(String raw) {
@@ -95,14 +113,15 @@ public class BancolombiaExcelReader {
           ? cell.getLocalDateTimeCellValue().toLocalDate().format(DATE_FORMATTER)
           : String.valueOf(cell.getNumericCellValue());
       case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-      case FORMULA -> String.valueOf(cell.getNumericCellValue());
+      case FORMULA -> cell.getCellFormula();
       default -> "";
     };
   }
 
   private TransactionType guessTypeFromDescription(String desc) {
     String d = desc.toLowerCase();
-    if (d.contains("pago") || d.contains("impto") || d.contains("cuota") || d.contains("comision")) {
+    if (d.contains("pago") || d.contains("impto") || d.contains("cuota") || d.contains("comisión")
+        || d.contains("desembolso")) {
       return TransactionType.DEBIT;
     }
     return TransactionType.CREDIT;

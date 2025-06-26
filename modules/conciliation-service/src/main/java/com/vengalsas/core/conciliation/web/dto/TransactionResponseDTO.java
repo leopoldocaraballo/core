@@ -18,21 +18,22 @@ import lombok.NoArgsConstructor;
 @Builder
 public class TransactionResponseDTO {
 
-  @Schema(example = "2025-04-30", description = "Transaction date in ISO format")
+  @Schema(example = "2025-04-01", description = "Transaction date in ISO format")
   private LocalDate date;
 
-  @Schema(example = "Pago factura marzo", description = "Transaction description")
+  @Schema(example = "Pago factura Facebook", description = "Transaction description")
   private String description;
 
-  @Schema(example = "150000.00", description = "Transaction amount")
+  @Schema(example = "150000.00", description = "Positive amount of the transaction")
   private BigDecimal amount;
 
-  @Schema(example = "CREDIT", description = "Transaction type: CREDIT or DEBIT")
+  @Schema(example = "DEBIT", description = "Transaction type: DEBIT or CREDIT")
   private TransactionType transactionType;
 
-  @Schema(example = "LINIX", description = "Source system: LINIX or BANCOLUMBIA")
+  @Schema(example = "LINIX", description = "Source system identifier")
   private SourceSystem source;
 
-  @Schema(example = "1000470", description = "Transaction reference or document number")
+  @Schema(example = "1000470", description = "Optional reference or document number")
   private String reference;
+
 }

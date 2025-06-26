@@ -1,6 +1,7 @@
 package com.vengalsas.core.conciliation.application.service;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -110,7 +111,8 @@ public class ReconciliationService {
    * Can be extended with fuzzy logic (±1 día, referencia parcial, etc.).
    */
   private boolean isMatch(Transaction a, Transaction b) {
-    return a.getAmount().stripTrailingZeros().compareTo(b.getAmount().stripTrailingZeros()) == 0
-        && a.getDate().isEqual(b.getDate());
+    boolean sameDate = a.getDate().isEqual(b.getDate());
+    boolean similarAmount = a.getAmount().subtract(b.getAmount()).abs().compareTo(BigDecimal.ONE) <= 0;
+    return sameDate && similarAmount;
   }
 }
