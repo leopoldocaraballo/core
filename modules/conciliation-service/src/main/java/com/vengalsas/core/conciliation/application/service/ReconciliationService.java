@@ -15,6 +15,8 @@ import com.vengalsas.core.conciliation.infrastructure.adapter.BancolombiaExcelRe
 import com.vengalsas.core.conciliation.infrastructure.adapter.LinixTxtReader;
 import com.vengalsas.core.conciliation.web.dto.ConciliationResultDTO;
 import com.vengalsas.core.conciliation.web.dto.ReconciliationRequestDTO;
+import com.vengalsas.core.conciliation.web.dto.ReconciliationResponseDTO;
+import com.vengalsas.core.conciliation.web.dto.ReconciliationSummaryDTO;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,9 +50,10 @@ public class ReconciliationService {
   }
 
   /**
-   * Performs reconciliation between Linix and Bancolombia transactions.
+   * Performs reconciliation between Linix and Bancolombia transactions,
+   * identifying exact and approximate matches and classifying discrepancies.
    */
-  public List<ConciliationResultDTO> reconcileTransactions(ReconciliationRequestDTO request) {
+  public ReconciliationResponseDTO reconcileTransactions(ReconciliationRequestDTO request) {
     List<Transaction> linixTxs = request.getLinixTransactions();
     List<Transaction> bancoTxs = request.getBancolombiaTransactions();
 
@@ -66,53 +69,113 @@ public class ReconciliationService {
 
         Transaction banco = bancoTxs.get(i);
 
-        if (isMatch(linix, banco)) {
-          results.add(ConciliationResultDTO.builder()
-              .linixTransaction(linix)
-              .bancolombiaTransaction(banco)
-              .matched(true)
-              .build());
+        if (isExactMatch(linix, banco)) {
+          results.add(buildResult(linix, banco, true, "Coincidencia exacta"));
           matchedIndexes.add(i);
           matched = true;
-          log.debug("Match: LINIX [{}] ↔ BANCO [{}]", linix.getReference(), banco.getReference());
+          break;
+        } else if (isFlexibleMatch(linix, banco)) {
+          results.add(buildResult(linix, banco, true, "Coincidencia aproximada (fecha o monto)"));
+          matchedIndexes.add(i);
+          matched = true;
           break;
         }
       }
 
       if (!matched) {
-        results.add(ConciliationResultDTO.builder()
-            .linixTransaction(linix)
-            .bancolombiaTransaction(null)
-            .matched(false)
-            .build());
-        log.debug("Unmatched LINIX transaction [{}]", linix.getReference());
+        results.add(buildResult(linix, null, false, classifyDiscrepancy(linix, "LINIX")));
       }
     }
 
-    // Agrega transacciones Bancolombia no conciliadas
     for (int i = 0; i < bancoTxs.size(); i++) {
       if (!matchedIndexes.contains(i)) {
         Transaction banco = bancoTxs.get(i);
-        results.add(ConciliationResultDTO.builder()
-            .linixTransaction(null)
-            .bancolombiaTransaction(banco)
-            .matched(false)
-            .build());
-        log.debug("Unmatched BANCO transaction [{}]", banco.getReference());
+        results.add(buildResult(null, banco, false, classifyDiscrepancy(banco, "BANCOLOMBIA")));
       }
     }
 
     log.info("Conciliation completed. Total results: {}", results.size());
-    return results;
+
+    // Generar resumen contable
+    ReconciliationSummaryDTO summary = generateSummary(linixTxs, bancoTxs, results);
+
+    return ReconciliationResponseDTO.builder()
+        .results(results)
+        .summary(summary)
+        .build();
   }
 
-  /**
-   * Matching logic: currently strict by date and amount.
-   * Can be extended with fuzzy logic (±1 día, referencia parcial, etc.).
-   */
-  private boolean isMatch(Transaction a, Transaction b) {
-    boolean sameDate = a.getDate().isEqual(b.getDate());
-    boolean similarAmount = a.getAmount().subtract(b.getAmount()).abs().compareTo(BigDecimal.ONE) <= 0;
-    return sameDate && similarAmount;
+  private ReconciliationSummaryDTO generateSummary(List<Transaction> linixTxs, List<Transaction> bancoTxs,
+      List<ConciliationResultDTO> results) {
+    int matched = 0;
+    int unmatchedLinix = 0;
+    int unmatchedBanco = 0;
+
+    for (ConciliationResultDTO result : results) {
+      if (result.isMatched()) {
+        matched++;
+      } else if (result.getLinixTransaction() != null) {
+        unmatchedLinix++;
+      } else if (result.getBancolombiaTransaction() != null) {
+        unmatchedBanco++;
+      }
+    }
+
+    BigDecimal totalLinix = linixTxs.stream()
+        .map(Transaction::getAmount)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    BigDecimal totalBanco = bancoTxs.stream()
+        .map(Transaction::getAmount)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    return ReconciliationSummaryDTO.builder()
+        .totalLinix(linixTxs.size())
+        .totalBancolombia(bancoTxs.size())
+        .matchedCount(matched)
+        .unmatchedLinix(unmatchedLinix)
+        .unmatchedBancolombia(unmatchedBanco)
+        .totalLinixAmount(totalLinix)
+        .totalBancolombiaAmount(totalBanco)
+        .differenceAmount(totalLinix.subtract(totalBanco))
+        .build();
+  }
+
+  private ConciliationResultDTO buildResult(Transaction linix, Transaction banco, boolean matched, String type) {
+    return ConciliationResultDTO.builder()
+        .linixTransaction(linix)
+        .bancolombiaTransaction(banco)
+        .matched(matched)
+        .discrepancyType(type)
+        .build();
+  }
+
+  private boolean isExactMatch(Transaction a, Transaction b) {
+    return a.getAmount().compareTo(b.getAmount()) == 0 && a.getDate().isEqual(b.getDate());
+  }
+
+  private boolean isFlexibleMatch(Transaction a, Transaction b) {
+    BigDecimal tolerance = new BigDecimal("500");
+    boolean amountClose = a.getAmount().subtract(b.getAmount()).abs().compareTo(tolerance) <= 0;
+    boolean dateClose = !a.getDate().isBefore(b.getDate().minusDays(1))
+        && !a.getDate().isAfter(b.getDate().plusDays(1));
+    return amountClose && dateClose;
+  }
+
+  private String classifyDiscrepancy(Transaction tx, String source) {
+    String d = tx.getDescription() != null ? tx.getDescription().toLowerCase() : "";
+
+    if (d.contains("comisión") || d.contains("mantenimiento"))
+      return "Comisión bancaria";
+    if (d.contains("interés") || d.contains("rendimiento"))
+      return "Intereses bancarios";
+    if (d.contains("cheque") || d.contains("pendiente"))
+      return "Cheque pendiente de cobro";
+    if (d.contains("ajuste") || d.contains("error"))
+      return "Error de digitación";
+
+    return "BANCOLOMBIA".equals(source)
+        ? "Movimiento bancario no registrado en contabilidad"
+        : "Movimiento contable no reflejado en banco";
   }
 }

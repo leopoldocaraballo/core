@@ -41,5 +41,4 @@ public class Transaction {
   @Enumerated(EnumType.STRING)
   private SourceSystem source;
 
-  private String reference;
 }

@@ -33,7 +33,4 @@ public class TransactionResponseDTO {
   @Schema(example = "LINIX", description = "Source system identifier")
   private SourceSystem source;
 
-  @Schema(example = "1000470", description = "Optional reference or document number")
-  private String reference;
-
 }

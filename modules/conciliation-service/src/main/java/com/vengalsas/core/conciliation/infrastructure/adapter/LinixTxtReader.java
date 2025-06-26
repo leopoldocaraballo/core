@@ -68,7 +68,6 @@ public class LinixTxtReader {
               .amount(amount)
               .transactionType(type)
               .source(SourceSystem.LINIX)
-              .reference("")
               .build();
 
           transactions.add(transaction);

@@ -76,8 +76,7 @@ public class BancolombiaExcelReader {
               .description(description)
               .amount(amount)
               .transactionType(type)
-              .source(SourceSystem.BANCOLUMBIA)
-              .reference("")
+              .source(SourceSystem.BANCOLOMBIA)
               .build();
 
           transactions.add(tx);
