@@ -13,7 +13,18 @@ public class ReconciliationSummaryDTO {
   private int matchedCount;
   private int unmatchedLinix;
   private int unmatchedBancolombia;
+
   private BigDecimal totalLinixAmount;
   private BigDecimal totalBancolombiaAmount;
-  private BigDecimal differenceAmount;
+
+  private BigDecimal linixDebits;
+  private BigDecimal linixCredits;
+
+  private BigDecimal bancolombiaDebits;
+  private BigDecimal bancolombiaCredits;
+
+  private BigDecimal saldoInicialBanco;
+  private BigDecimal saldoFinalBanco;
+  private BigDecimal saldoFinalCalculado;
+  private BigDecimal diferenciaSaldoFinal;
 }

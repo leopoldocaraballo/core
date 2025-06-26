@@ -5,11 +5,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -17,6 +16,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Component;
 
+import com.vengalsas.core.conciliation.domain.model.BancolombiaStatement;
 import com.vengalsas.core.conciliation.domain.model.SourceSystem;
 import com.vengalsas.core.conciliation.domain.model.Transaction;
 import com.vengalsas.core.conciliation.domain.model.TransactionType;
@@ -24,52 +24,57 @@ import com.vengalsas.core.conciliation.domain.model.TransactionType;
 @Component
 public class BancolombiaExcelReader {
 
-  private static final int ASSUMED_YEAR = 2025;
+  private static final int HEADER_ROW_INDEX = 13; // Fila 14 en Excel (0-based)
   private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("d/M/yyyy");
 
-  public List<Transaction> read(InputStream inputStream) throws Exception {
+  public BancolombiaStatement read(InputStream inputStream) throws Exception {
     List<Transaction> transactions = new ArrayList<>();
+    BigDecimal startingBalance = BigDecimal.ZERO;
+    BigDecimal endingBalance = BigDecimal.ZERO;
+    BigDecimal totalDebits = BigDecimal.ZERO;
+    BigDecimal totalCredits = BigDecimal.ZERO;
 
     try (Workbook workbook = WorkbookFactory.create(inputStream)) {
       Sheet sheet = workbook.getSheetAt(0);
-      int headerRowIndex = -1;
-      Map<String, Integer> columnMap = new HashMap<>();
 
-      for (Row row : sheet) {
-        if (headerRowIndex == -1 && row != null) {
-          for (Cell cell : row) {
-            String text = cellText(cell).toLowerCase();
-            if (text.contains("fecha") || text.contains("descripción") || text.contains("valor")) {
-              headerRowIndex = row.getRowNum();
-              break;
-            }
-          }
-          continue;
-        }
-
-        if (row == null || row.getRowNum() <= headerRowIndex)
+      // Extraer saldos de las filas superiores
+      for (int i = 8; i <= 12; i++) {
+        Row row = sheet.getRow(i);
+        if (row == null)
           continue;
 
-        if (columnMap.isEmpty()) {
-          for (Cell cell : sheet.getRow(headerRowIndex)) {
-            String name = cellText(cell).trim().toLowerCase();
-            columnMap.put(name, cell.getColumnIndex());
+        for (Cell cell : row) {
+          String val = cellText(cell).toLowerCase();
+          if (val.contains("saldo anterior")) {
+            startingBalance = extractNumericBelowOrRight(sheet, cell);
+          } else if (val.contains("total abonos")) {
+            totalCredits = extractNumericBelowOrRight(sheet, cell);
+          } else if (val.contains("total cargos")) {
+            totalDebits = extractNumericBelowOrRight(sheet, cell);
+          } else if (val.contains("saldo actual")) {
+            endingBalance = extractNumericBelowOrRight(sheet, cell);
           }
         }
+      }
+
+      // Leer transacciones desde la fila 15
+      for (int i = HEADER_ROW_INDEX + 1; i <= sheet.getLastRowNum(); i++) {
+        Row row = sheet.getRow(i);
+        if (row == null)
+          continue;
+
+        String rawDate = cellText(row.getCell(0));
+        String description = cellText(row.getCell(1));
+        String amountStr = cellText(row.getCell(4));
+
+        if (rawDate.isEmpty() || description.isEmpty() || amountStr.isEmpty())
+          continue;
 
         try {
-          String rawDate = getCellValue(row, columnMap, "fecha");
-          String description = getCellValue(row, columnMap, "descripción");
-          String amountStr = getCellValue(row, columnMap, "valor");
-
-          if (rawDate.isEmpty() || description.isEmpty() || amountStr.isEmpty())
-            continue;
-
           LocalDate date = parseDate(rawDate);
           BigDecimal rawAmount = new BigDecimal(amountStr.replace(",", "").trim());
           BigDecimal amount = rawAmount.abs();
-
-          TransactionType type = rawAmount.signum() < 0 ? TransactionType.DEBIT : guessTypeFromDescription(description);
+          TransactionType type = rawAmount.signum() < 0 ? TransactionType.DEBIT : TransactionType.CREDIT;
 
           Transaction tx = Transaction.builder()
               .date(date)
@@ -81,48 +86,74 @@ public class BancolombiaExcelReader {
 
           transactions.add(tx);
         } catch (Exception e) {
-          System.err.println("Error parsing row " + row.getRowNum() + ": " + e.getMessage());
+          System.err.println("[WARN] Error parsing row " + i + ": " + e.getMessage());
         }
       }
     }
 
-    return transactions;
-  }
-
-  private String getCellValue(Row row, Map<String, Integer> columnMap, String columnName) {
-    Integer index = columnMap.get(columnName.toLowerCase());
-    return (index != null) ? cellText(row.getCell(index)) : "";
-  }
-
-  private LocalDate parseDate(String raw) {
-    if (!raw.contains("/"))
-      throw new IllegalArgumentException("Invalid date format: " + raw);
-    String[] parts = raw.split("/");
-    int day = Integer.parseInt(parts[0]);
-    int month = Integer.parseInt(parts[1]);
-    return LocalDate.of(ASSUMED_YEAR, month, day);
+    return BancolombiaStatement.builder()
+        .transactions(transactions)
+        .startingBalance(startingBalance)
+        .endingBalance(endingBalance)
+        .totalCredits(totalCredits)
+        .totalDebits(totalDebits)
+        .build();
   }
 
   private String cellText(Cell cell) {
     if (cell == null)
       return "";
     return switch (cell.getCellType()) {
-      case STRING -> cell.getStringCellValue();
+      case STRING -> cell.getStringCellValue().trim();
       case NUMERIC -> DateUtil.isCellDateFormatted(cell)
           ? cell.getLocalDateTimeCellValue().toLocalDate().format(DATE_FORMATTER)
-          : String.valueOf(cell.getNumericCellValue());
+          : BigDecimal.valueOf(cell.getNumericCellValue()).toPlainString();
       case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-      case FORMULA -> cell.getCellFormula();
+      case FORMULA -> {
+        try {
+          if (cell.getCachedFormulaResultType() == CellType.NUMERIC)
+            yield BigDecimal.valueOf(cell.getNumericCellValue()).toPlainString();
+          else
+            yield cell.getStringCellValue();
+        } catch (Exception e) {
+          yield "";
+        }
+      }
       default -> "";
     };
   }
 
-  private TransactionType guessTypeFromDescription(String desc) {
-    String d = desc.toLowerCase();
-    if (d.contains("pago") || d.contains("impto") || d.contains("cuota") || d.contains("comisión")
-        || d.contains("desembolso")) {
-      return TransactionType.DEBIT;
+  private BigDecimal extractNumericBelowOrRight(Sheet sheet, Cell labelCell) {
+    Row row = labelCell.getRow();
+    int colIndex = labelCell.getColumnIndex();
+    int rowIndex = row.getRowNum();
+
+    // 1. Buscar en celda de abajo
+    if (sheet.getRow(rowIndex + 1) != null) {
+      Cell below = sheet.getRow(rowIndex + 1).getCell(colIndex);
+      try {
+        String text = cellText(below).replace(",", "").trim();
+        return new BigDecimal(text);
+      } catch (Exception ignored) {
+      }
     }
-    return TransactionType.CREDIT;
+
+    // 2. Fallback: celda a la derecha
+    Cell right = row.getCell(colIndex + 1);
+    try {
+      String text = cellText(right).replace(",", "").trim();
+      return new BigDecimal(text);
+    } catch (Exception ignored) {
+    }
+
+    return BigDecimal.ZERO;
+  }
+
+  private LocalDate parseDate(String raw) {
+    String[] parts = raw.split("/");
+    int day = Integer.parseInt(parts[0]);
+    int month = Integer.parseInt(parts[1]);
+    int year = (parts.length > 2) ? Integer.parseInt(parts[2]) : LocalDate.now().getYear();
+    return LocalDate.of(year, month, day);
   }
 }

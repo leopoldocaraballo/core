@@ -10,6 +10,7 @@ import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.vengalsas.core.conciliation.domain.model.BancolombiaStatement;
 import com.vengalsas.core.conciliation.domain.model.Transaction;
 import com.vengalsas.core.conciliation.infrastructure.adapter.BancolombiaExcelReader;
 import com.vengalsas.core.conciliation.infrastructure.adapter.LinixTxtReader;
@@ -29,15 +30,15 @@ public class ReconciliationService {
   private final BancolombiaExcelReader bancolombiaExcelReader;
   private final LinixTxtReader linixTxtReader;
 
-  /**
-   * Reads and normalizes transactions from Bancolombia and Linix files.
-   */
+  private BancolombiaStatement lastBancolombiaStatement;
+
   public List<Transaction> readAndNormalize(MultipartFile bankFile, MultipartFile accountingFile) throws Exception {
     try (
         InputStream bankInput = bankFile.getInputStream();
         InputStream accountingInput = accountingFile.getInputStream()) {
 
-      List<Transaction> bancolombia = bancolombiaExcelReader.read(bankInput);
+      this.lastBancolombiaStatement = bancolombiaExcelReader.read(bankInput);
+      List<Transaction> bancolombia = lastBancolombiaStatement.getTransactions();
       List<Transaction> linix = linixTxtReader.read(accountingInput);
 
       log.info("Bancolombia transactions loaded: {}", bancolombia.size());
@@ -49,10 +50,6 @@ public class ReconciliationService {
     }
   }
 
-  /**
-   * Performs reconciliation between Linix and Bancolombia transactions,
-   * identifying exact and approximate matches and classifying discrepancies.
-   */
   public ReconciliationResponseDTO reconcileTransactions(ReconciliationRequestDTO request) {
     List<Transaction> linixTxs = request.getLinixTransactions();
     List<Transaction> bancoTxs = request.getBancolombiaTransactions();
@@ -96,7 +93,6 @@ public class ReconciliationService {
 
     log.info("Conciliation completed. Total results: {}", results.size());
 
-    // Generar resumen contable
     ReconciliationSummaryDTO summary = generateSummary(linixTxs, bancoTxs, results);
 
     return ReconciliationResponseDTO.builder()
@@ -112,22 +108,23 @@ public class ReconciliationService {
     int unmatchedBanco = 0;
 
     for (ConciliationResultDTO result : results) {
-      if (result.isMatched()) {
+      if (result.isMatched())
         matched++;
-      } else if (result.getLinixTransaction() != null) {
+      else if (result.getLinixTransaction() != null)
         unmatchedLinix++;
-      } else if (result.getBancolombiaTransaction() != null) {
+      else if (result.getBancolombiaTransaction() != null)
         unmatchedBanco++;
-      }
     }
 
-    BigDecimal totalLinix = linixTxs.stream()
-        .map(Transaction::getAmount)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal linixDebits = sumByType(linixTxs, "DEBIT");
+    BigDecimal linixCredits = sumByType(linixTxs, "CREDIT");
 
-    BigDecimal totalBanco = bancoTxs.stream()
-        .map(Transaction::getAmount)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal bancoDebits = sumByType(bancoTxs, "DEBIT");
+    BigDecimal bancoCredits = sumByType(bancoTxs, "CREDIT");
+
+    BigDecimal saldoEstimado = lastBancolombiaStatement.getStartingBalance()
+        .add(bancoCredits)
+        .subtract(bancoDebits);
 
     return ReconciliationSummaryDTO.builder()
         .totalLinix(linixTxs.size())
@@ -135,10 +132,24 @@ public class ReconciliationService {
         .matchedCount(matched)
         .unmatchedLinix(unmatchedLinix)
         .unmatchedBancolombia(unmatchedBanco)
-        .totalLinixAmount(totalLinix)
-        .totalBancolombiaAmount(totalBanco)
-        .differenceAmount(totalLinix.subtract(totalBanco))
+        .totalLinixAmount(linixDebits.add(linixCredits))
+        .totalBancolombiaAmount(bancoDebits.add(bancoCredits))
+        .linixDebits(linixDebits)
+        .linixCredits(linixCredits)
+        .bancolombiaDebits(bancoDebits)
+        .bancolombiaCredits(bancoCredits)
+        .saldoInicialBanco(lastBancolombiaStatement.getStartingBalance())
+        .saldoFinalBanco(lastBancolombiaStatement.getEndingBalance())
+        .saldoFinalCalculado(saldoEstimado)
+        .diferenciaSaldoFinal(lastBancolombiaStatement.getEndingBalance().subtract(saldoEstimado))
         .build();
+  }
+
+  private BigDecimal sumByType(List<Transaction> txs, String type) {
+    return txs.stream()
+        .filter(tx -> tx.getTransactionType().name().equalsIgnoreCase(type))
+        .map(Transaction::getAmount)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
   }
 
   private ConciliationResultDTO buildResult(Transaction linix, Transaction banco, boolean matched, String type) {

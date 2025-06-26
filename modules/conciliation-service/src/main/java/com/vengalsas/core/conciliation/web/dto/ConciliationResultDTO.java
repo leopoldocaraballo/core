@@ -8,11 +8,8 @@ import lombok.Data;
 @Data
 @Builder
 public class ConciliationResultDTO {
-
   private Transaction linixTransaction;
   private Transaction bancolombiaTransaction;
   private boolean matched;
-
-  // NUEVO: permite clasificar las diferencias según NIIF / DIAN
   private String discrepancyType;
 }
